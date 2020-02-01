@@ -13,6 +13,13 @@ int M2 = 4; //to enable pin A2 of motor driver
 double pulse = 0;
 double abs_pulse = 0; //saves how many pulses did the encoder send
 
+double PM =0;
+double RPM = 0;
+double old_time=0;
+double new_time=0;
+double new_position=0;
+double old_position=0;
+
 boolean Read_Dir; //Saves the direction of the motor
 int Set_Dir; //0=stop motor, 1=right motor, 2=left motor
 
@@ -85,10 +92,23 @@ void setup() {
 
   attachInterrupt(0, read_encoder1, CHANGE);
 
-  attachInterrupt(1, read_encoder2, CHANGE);
+ attachInterrupt(1, read_encoder2, CHANGE);
+
+
 }
 
 void loop() {
-  Serial.println (pulse, DEC);
+  digitalWrite(M2, LOW);
+  analogWrite(M1, 70);
+  new_position=abs(pulse);
+  new_time = micros();
+  PM=((new_position-old_position)/((new_time-old_time)*0.000001))*60;
+  RPM=(PM/420)/30;
+  old_position=new_position;
+  old_time = new_time;
+  
+  Serial.println(RPM);
+  delay(100);
+
 
 }
