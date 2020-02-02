@@ -30,7 +30,7 @@ double setpoint; //desired number for the PID control
 double angle = 0;
 
 //double kp = 0.1, ki = 0.1, kd = 0.015; //constants for the PID control
-double kp = 0.1, ki = 0.1, kd = 0.2; //constants for the PID control
+double kp = 2, ki = 0.01, kd = 0.5; //constants for the PID control
 //PID motor(&RPM, &pwm, &setpoint, kp, ki, kd, DIRECT);
 PID motor(&pulse, &pwm, &setpoint, kp, ki, kd, DIRECT);
 
@@ -87,7 +87,7 @@ void read_encoder2() {
   //Serial.println (pulse, DEC);
 }
 void setup() {
-  //TCCR1B = TCCR1B & 0b11111000 | 1;  // set 31KHz PWM to prevent motor noise
+  TCCR1B = TCCR1B & 0b11111000 | 1;  // set 31KHz PWM to prevent motor noise
   Serial.begin(250000); //init the serial port
   setpoint = map (90, 0, 360, 0, 420); // mapping degree into pulse
   
