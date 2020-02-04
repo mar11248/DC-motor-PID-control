@@ -2,8 +2,20 @@
 // Autor: Adrián Martínez Girón
 // for Universidad del Valle de Guatemala
 
+//#define DEBUG
 #include <PID_v1.h>
 
+#define SAMPLE_DELAY (5)   //  this gets 1 reading per second.
+                              //  adjust the delay to fit your needs
+#define PULSES_PER_TURN (420)  //  32 state changes per turn on 1 line, 
+unsigned int pulseCount;
+bool lastState;
+unsigned int lastTime; 
+
+int window=100;
+
+boolean mode = true; //change to false for speed control
+int cont=0;
 const byte encoder_A = 2; // to interrupt 0
 const byte encoder_B = 3; // to digital pin 3
 
@@ -24,73 +36,55 @@ double old_position = 0;
 boolean Read_Dir; //Saves the direction of the motor
 int Set_Dir; //0=stop motor, 1=right motor, 2=left motor
 
-double pwm = 20; //pulse sent to the motor
+int incomingByte = 0;
+
+double pwm = 0; //pulse sent to the motor
 double setpoint; //desired number for the PID control
 
 double angle = 0;
+long int choice = 0;
 
-//double kp = 0.1, ki = 0.1, kd = 0.015; //constants for the PID control
-double kp = 2, ki = 0.01, kd = 0.5; //constants for the PID control
-//PID motor(&RPM, &pwm, &setpoint, kp, ki, kd, DIRECT);
+
+
+String inString = "";
+
+double kp1 = 0.16617, ki1 = 1.3085, kd1 = 0; //constants for the PID control
+//double kp1 = 2, ki1 = 0.533, kd1 = 0; //constants for the PID control
+//double kp = 0.1, ki = 0.9, kd = 1.182; //constants for the PID control for working position
+double kp = 0.3, ki = 0.4, kd = 0.1; //constants for the PID control
+
 PID motor(&pulse, &pwm, &setpoint, kp, ki, kd, DIRECT);
-
+PID motor1(&RPM, &pwm, &setpoint, kp1, ki1, kd1, DIRECT);
 void read_encoder1() {
   // look for a low-to-high on channel A
-  if (digitalRead(encoder_A) == HIGH) {
-
-    // check channel B to see which way encoder is turning
-    if (digitalRead(encoder_B) == LOW) {
-      pulse++;         // CW
-    }
-    else {
-      pulse--;         // CCW
-    }
-  }
-
-  else   // must be a high-to-low edge on channel A
-  {
-    // check channel B to see which way encoder is turning
-    if (digitalRead(encoder_B) == HIGH) {
-      pulse++;          // CW
-    }
-    else {
-      pulse--;          // CCW
-    }
+  if (digitalRead(encoder_A) == digitalRead(encoder_B)) {
+    pulse++;
+  } else {
+    pulse--;
   }
 
 }
 
 
-void read_encoder2() {
-  // look for a low-to-high on channel B
-  if (digitalRead(encoder_B) == HIGH) {
 
-    // check channel B to see which way encoder is turning
-    if (digitalRead(encoder_A) == HIGH) {
-      pulse++;         // CW
-    }
-    else {
-      pulse--;         // CCW
-    }
-  }
-
-  else   // must be a high-to-low edge on channel B
-  {
-    // check channel B to see which way encoder is turning
-    if (digitalRead(encoder_A) == LOW) {
-      pulse++;          // CW
-    }
-    else {
-      pulse--;          // CCW
-    }
-  }
-  //Serial.println (pulse, DEC);
-}
 void setup() {
+  if (mode) {
+
+
+    motor.SetOutputLimits(20, 250);
+  }
+  if (!mode) {
+
+    motor1.SetOutputLimits(0, 255);
+
+  }
+  pinMode(A0, INPUT);
+  pinMode(A1, INPUT);
+  pinMode(A2, INPUT);
   TCCR1B = TCCR1B & 0b11111000 | 1;  // set 31KHz PWM to prevent motor noise
   Serial.begin(250000); //init the serial port
-  setpoint = map (90, 0, 360, 0, 420); // mapping degree into pulse
-  
+  //setpoint = map (90, 0, 360, 0, 420); // mapping degree into pulse
+
   pinMode(M1, OUTPUT);
   pinMode(M2, OUTPUT);
 
@@ -98,9 +92,11 @@ void setup() {
   pinMode(encoder_B, INPUT);
 
   motor.SetMode(AUTOMATIC);
-  motor.SetOutputLimits(-80, 80);
-  motor.SetSampleTime(100);
 
+  motor.SetSampleTime(100);
+  motor1.SetMode(AUTOMATIC);
+
+  motor1.SetSampleTime(100);
   attachInterrupt(0, read_encoder1, CHANGE);
 
   // attachInterrupt(1, read_encoder2, CHANGE);
@@ -109,37 +105,94 @@ void setup() {
 }
 
 void loop() {
-  motor.Compute();
-  if (pulse>setpoint) {
-
-    advance((int)pwm);
-
-    Serial.print(pwm);
-
+  while (Serial.available() > 0) {
+    int inChar = Serial.read();
+    if (isDigit(inChar)) {
+      // convert the incoming byte to a char and add it to the string:
+      inString += (char)inChar;
+    }
+    // if you get a newline, print the string, then the string's value:
+    if (inChar == '\n') {
+      choice = inString.toInt();
+      // clear the string for new input:
+      inString = "";
+    }
   }
-  else  {
+  if (mode) {
+    setpoint = mapfloat(choice, 0, 360, 0, 420);
+       
+    if (pulse < (setpoint-1)) {
+      motor.Compute();
+      motor.SetControllerDirection(DIRECT);
+      advance((int)pwm);
 
-    int pwm1 = abs(pwm);
-    back(pwm1);
 
-    Serial.print(pwm);
+    }
+    else if (pulse > (setpoint+1)) {
+      motor.Compute();
+      int pwm1 = abs(pwm);
+      motor.SetControllerDirection(REVERSE);
+      back((int)pwm1);
 
+       
+
+    } else {
+      Stop();
+    }
+
+
+   noInterrupts();
+   new_position = abs(pulse);
+   interrupts();
+    
+    new_time = micros();
+
+
+    angle = map (new_position, 0, 420, 0, 360);
+    old_position = new_position;
+    old_time = new_time;
+    
   }
+  if (!mode) {
 
+    setpoint = choice;
+    motor1.Compute();
+  
+    advance(pwm);
+   
 
+    if ((unsigned int)millis() - lastTime >= SAMPLE_DELAY)  
+    {
+         RPM = (abs(pulse) * (60000.f / ((unsigned int)millis() - lastTime))) / PULSES_PER_TURN;
+         pulse = 0;
+         lastTime = (unsigned int)millis();
+    }
+    
+#ifdef DEBUG
+         double P=analogRead(A2);
+         double I=analogRead(A1);
+         double D=analogRead(A0);
+         kp1=mapfloat(P, 0, 1024, 0.01, 20);
+         ki1=mapfloat(I, 0, 1024, 0, 20);
+         kd1=mapfloat(D, 0, 1024, 0, 1); 
+         motor1.SetTunings(kp1, ki1, kd1);
+         
+         Serial.print(kp1,DEC);
+         Serial.print(",");
+         Serial.print(ki1,DEC);
+         Serial.print(",");
+         Serial.print(kd1,DEC);
+         Serial.print(",");
+         Serial.println(RPM);
+ #endif        
+    }
 
-  new_position = abs(pulse);
-  new_time = micros();
-  PM = ((new_position - old_position) / ((new_time - old_time) * 0.000001)) * 60;
-  RPM = abs(PM / 420);
-  RPMmot = RPM / 30;
-  angle = new_position * 0.8571428571428;
-  old_position = new_position;
-  old_time = new_time;
-
-  Serial.print(",");
-  Serial.println(angle);
-  //delay(100);
+    //    Serial.print(pwm);
+    //    Serial.print(",");
+    //    Serial.print(setpoint);
+    //    Serial.print(",");
+    //    Serial.println(PM);
+  
 
 
 }
@@ -158,4 +211,9 @@ void Stop()//Motor stops
 {
   digitalWrite(M1, LOW);
   digitalWrite(M2, LOW);
+}
+
+double mapfloat(double x, double in_min, double in_max, double out_min, double out_max)
+{
+ return (double)(x - in_min) * (out_max - out_min) / (double)(in_max - in_min) + out_min;
 }
